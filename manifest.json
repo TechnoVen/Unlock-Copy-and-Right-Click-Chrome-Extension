@@ -1,0 +1,49 @@
+{
+  "manifest_version": 3,
+  "name": "Unlock Copy & Right Click",
+  "version": "1.5.0",
+  "description": "Re-enables copy, paste, and right-click on websites that try to block them.",
+  "icons": {
+    "16": "icons/16.png",
+    "32": "icons/32.png",
+    "128": "icons/128.png",
+    "256": "icons/256.png",
+    "512": "icons/512.png"
+  },
+  "action": {
+  },
+  "background": {
+    "service_worker": "script/worker.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["http://*/*", "https://*/*"],
+      "js": ["script/content.js"],
+      "run_at": "document_end",
+      "match_about_blank": true
+    }
+  ],
+  "permissions": ["storage", "activeTab", "scripting", "contextMenus", "notifications", "webRequest"],
+  "host_permissions": ["*://*/*"],
+  "options_ui": {
+    "page": "options/index.html",
+    "open_in_tab": false
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["*"],
+      "matches": ["*://*/*"]
+    }
+  ],
+  "commands": {
+    "_execute_action": {
+      "description": "Toggle Enable Copy-Paste"
+    }
+  },
+  "update_url": "https://clients2.google.com/service/update2/crx",
+  "author": "Ahmed Nadir",
+  "homepage_url": "https://ahmednadir.com",
+  "content_security_policy": {
+    "extension_pages": "default-src 'self'; style-src 'self'; script-src 'self'; connect-src 'self';"
+  }
+}
