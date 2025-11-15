@@ -10,18 +10,9 @@
   <main>
     <section>
       <h1>Enable Copy-Paste Options</h1>
-      <label for="whitelist" class="options-label">Whitelisted Domains:</label>
-      <textarea id="whitelist" rows="8" placeholder="Enter domains separated by commas"
-                aria-describedby="whitelist-description" disabled></textarea>
-      <div id="whitelist-description" class="form-helper-text">
-        Enter domains (e.g., example.com) to disable restrictions.
-      </div>
+      <h2>Enabled Websites</h2>
+      <ul id="enabled-sites"></ul>
     </section>
-    <section class="button-group">
-      <button id="reset" type="button">Reset</button>
-      <button id="save" type="button">Save</button>
-    </section>
-    <div id="toast" aria-live="polite" role="status"></div>
   </main>
   <script src="index.js"></script>
 </body>

@@ -11,6 +11,8 @@
     "512": "icons/512.png"
   },
   "action": {
+    "default_popup": "popup/popup.html",
+    "default_title": "Unlock Copy & Right Click"
   },
   "background": {
     "service_worker": "script/worker.js"

@@ -192,8 +192,8 @@ chrome.runtime.onMessage.addListener(function(request, sender, response) {
           console.error('Error in rtx_request handler:', error);
         }
       }, {
-        urls: ["<all_urls>"],
-        types: ["main_frame"]
+        urls: ['<all_urls>'],
+        types: ['main_frame']
       },
       (details) => {
         if (chrome.runtime.lastError) {
@@ -336,3 +336,105 @@ function reqAnalyze(id, req) {
   //   // Do something
   // }
 }
+
+// --- Icon Management ---
+
+function updateIconForTab(tab) {
+  if (tab && tab.id && tab.url && tab.url.startsWith('http')) {
+    const url = new URL(tab.url);
+    const hostname = url.hostname;
+
+    chrome.storage.sync.get([hostname], (result) => {
+      const isEnabled = result[hostname] || false;
+      const iconPath = isEnabled ? '/icons/active/' : '/icons/';
+      
+      chrome.action.setIcon({
+        tabId: tab.id,
+        path: {
+          '16': `${iconPath}16.png`,
+          '32': `${iconPath}32.png`,
+          '64': `${iconPath}64.png`,
+          '128': `${iconPath}128.png`
+        }
+      }, () => {
+        if (chrome.runtime.lastError) {
+          // Ignore errors, e.g., if the tab is closed.
+        }
+      });
+    });
+  } else if (tab && tab.id) {
+    // Default icon for non-http pages like chrome://extensions
+    chrome.action.setIcon({
+        tabId: tab.id,
+        path: {
+            '16': '/icons/16.png',
+            '32': '/icons/32.png',
+            '64': '/icons/64.png',
+            '128': '/icons/128.png'
+        }
+    }, () => {
+        if (chrome.runtime.lastError) {
+            // Ignore errors
+        }
+    });
+  }
+}
+
+// Update icon when a tab is activated
+chrome.tabs.onActivated.addListener((activeInfo) => {
+  chrome.tabs.get(activeInfo.tabId, (tab) => {
+    if (!chrome.runtime.lastError) {
+      updateIconForTab(tab);
+    }
+  });
+});
+
+// Update icon when a tab is updated
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+  if (changeInfo.status === 'complete' || changeInfo.url) {
+     updateIconForTab(tab);
+  }
+});
+
+// Update icon when storage changes
+chrome.storage.onChanged.addListener((changes, namespace) => {
+  if (namespace === 'sync') {
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      if (tabs && tabs.length > 0 && !chrome.runtime.lastError) {
+        const currentTab = tabs[0];
+        if (currentTab.url) {
+            const url = new URL(currentTab.url);
+            const hostname = url.hostname;
+            if (changes[hostname]) {
+              updateIconForTab(currentTab);
+            }
+        }
+      }
+    });
+  }
+});
+
+// Update icon when a window is focused
+chrome.windows.onFocusChanged.addListener((windowId) => {
+    if (windowId !== chrome.windows.WINDOW_ID_NONE) {
+        chrome.tabs.query({ active: true, windowId: windowId }, (tabs) => {
+            if (tabs && tabs.length > 0 && !chrome.runtime.lastError) {
+                updateIconForTab(tabs[0]);
+            }
+        });
+    }
+});
+
+// Set initial icon for all tabs on startup
+chrome.runtime.onStartup.addListener(() => {
+    chrome.tabs.query({}, (tabs) => {
+        tabs.forEach(updateIconForTab);
+    });
+});
+
+// Set initial icon for existing tabs when the extension is installed/reloaded
+chrome.runtime.onInstalled.addListener(() => {
+    chrome.tabs.query({}, (tabs) => {
+        tabs.forEach(updateIconForTab);
+    });
+});
