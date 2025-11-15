@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Unlock Copy & Right Click",
-  "version": "1.5.0",
+  "version": "1.5.1",
   "description": "Re-enables copy, paste, and right-click on websites that try to block them.",
   "icons": {
     "16": "icons/16.png",
