@@ -5,7 +5,7 @@ function notifyAddon(msg) {
     title: chrome.runtime.getManifest().name,
     message: msg,
     type: 'basic',
-    iconUrl: '/icons/64.png'
+    iconUrl: '/icons/128.png'
   });
 }
 
@@ -27,7 +27,8 @@ function actionClicked(tabId, obj) {
 setInterval(function() {
   chrome.storage.local.set({'tt': Date.now()}, () => {
     if (chrome.runtime.lastError) {
-      console.error('Error setting storage for keep-alive:', chrome.runtime.lastError);
+      // In case the service worker is terminated and restarted, this might throw an error.
+      // We can safely ignore it as the purpose is just to keep the worker alive.
     }
   });
 }, 20000);
@@ -36,6 +37,50 @@ chrome.action.onClicked.addListener(function(tab) {
   actionClicked(tab.id, { allFrames: true });
 });
 
+// --- Refactored Icon Management ---
+
+const activeIcons = {
+  '16': '/icons/active/16.png',
+  '32': '/icons/active/32.png',
+  '128': '/icons/active/128.png',
+  '256': '/icons/active/256.png',
+  '512': '/icons/active/512.png'
+};
+
+const defaultIcons = {
+  '16': '/icons/16.png',
+  '32': '/icons/32.png',
+  '128': '/icons/128.png',
+  '256': '/icons/256.png',
+  '512': '/icons/512.png'
+};
+
+async function updateIcon(tabId) {
+    try {
+        const tab = await chrome.tabs.get(tabId);
+        if (!tab.url || !tab.url.startsWith('http')) {
+            chrome.action.setIcon({ tabId, path: defaultIcons });
+            return;
+        }
+
+        const { monitor, hostnames } = await chrome.storage.local.get({ monitor: false, hostnames: [] });
+        const { hostname } = new URL(tab.url);
+
+        const isEnabled = monitor && hostnames.some(h => new URLPattern(h).test(tab.url));
+        const iconPath = isEnabled ? activeIcons : defaultIcons;
+
+        chrome.action.setIcon({ tabId, path: iconPath }, () => {
+            if (chrome.runtime.lastError) {
+                // Ignore errors, e.g., if the tab was closed before the icon could be set.
+            }
+        });
+
+    } catch(e) {
+        // Tab was likely closed, or we don't have permission.
+    }
+}
+
+
 chrome.runtime.onMessage.addListener(function(request, sender, response) {
   if (request.method === 'rc-status') {
     chrome.scripting.executeScript({
@@ -43,7 +88,6 @@ chrome.runtime.onMessage.addListener(function(request, sender, response) {
       func: () => window.pointers.status
     }, r => {
       if (chrome.runtime.lastError) {
-        console.error('Error getting script status:', chrome.runtime.lastError);
         response(null);
       } else {
         response(r && r[0] ? r[0].result : null);
@@ -54,22 +98,14 @@ chrome.runtime.onMessage.addListener(function(request, sender, response) {
     if (sender.frameId === 0) {
       chrome.action.setIcon({
         tabId: sender.tab.id,
-        path: {
-          '16': '/icons/active/16.png',
-          '32': '/icons/active/32.png',
-          '64': '/icons/active/64.png'
-        }
+        path: activeIcons
       });
     }
   } else if (request.method === 'rc-release') {
     if (sender.frameId === 0) {
       chrome.action.setIcon({
         tabId: sender.tab.id,
-        path: {
-          '16': '/icons/16.png',
-          '32': '/icons/32.png',
-          '64': '/icons/64.png'
-        }
+        path: defaultIcons
       });
     }
   } else if (request.method === 'rc-emulate-press') {
@@ -91,24 +127,19 @@ chrome.runtime.onMessage.addListener(function(request, sender, response) {
           for (const hostname of prefs.hostnames) {
             const normalizedHostname = hostname.trim();
             if (normalizedHostname) {
-              let patternString = normalizedHostname.includes('*') ? normalizedHostname : `*://${normalizedHostname}/*`;
-              matches.add(patternString);
+              // Use URLPattern for more robust matching against the spec
+              matches.add(normalizedHostname);
             }
           }
-          let idCounter = 1;
-          for (let m of matches) {
-            try {
-              await chrome.scripting.registerContentScripts([{
-                allFrames: true,
-                matchOriginAsFallback: true,
-                runAt: 'document_start',
-                id: 'monitor-' + idCounter++,
-                js: ['/script/action.js'],
-                matches: [m]
-              }]);
-            } catch (e) {
-              console.error('Error registering content script for:', m, e);
-            }
+          if (matches.size > 0) {
+            await chrome.scripting.registerContentScripts([{
+              allFrames: true,
+              matchOriginAsFallback: true,
+              runAt: 'document_start',
+              id: 'monitor-script',
+              js: ['/script/action.js'],
+              matches: [...matches]
+            }]);
           }
         }
       } catch (error) {
@@ -118,10 +149,7 @@ chrome.runtime.onMessage.addListener(function(request, sender, response) {
     });
   observe();
   chrome.storage.onChanged.addListener(prefs => {
-    if (
-      (prefs.monitor && prefs.monitor.newValue !== prefs.monitor.oldValue) ||
-      (prefs.hostnames && JSON.stringify(prefs.hostnames.newValue) !== JSON.stringify(prefs.hostnames.oldValue))
-    ) {
+    if (prefs.monitor || prefs.hostnames) {
       observe();
     }
   });
@@ -148,14 +176,16 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
     const url = tab.url;
     if (url && url.startsWith('http')) {
       try {
-        const { hostname } = new URL(url);
+        const { origin } = new URL(url);
+        // Use origin for a more general match, can be refined to hostname if needed
+        const pattern = origin + '/*';
         chrome.storage.local.get({ hostnames: [] }, prefs => {
           if (chrome.runtime.lastError) {
             console.error('Error getting hostnames:', chrome.runtime.lastError);
             return;
           }
           const newHostnames = new Set(prefs.hostnames);
-          newHostnames.add(hostname);
+          newHostnames.add(pattern);
 
           chrome.storage.local.set({
             hostnames: [...newHostnames]
@@ -163,7 +193,7 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
             if (chrome.runtime.lastError) {
               console.error('Error saving hostname:', chrome.runtime.lastError);
             } else {
-              notifyAddon(`"${hostname}" added to whitelist.`);
+              notifyAddon(`This site has been added to the whitelist.`);
             }
           });
         });
@@ -183,52 +213,13 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
   }
 });
 
-// --- Refactored Icon Management ---
-
-const activeIcons = {
-  '16': '/icons/active/16.png',
-  '32': '/icons/active/32.png',
-  '64': '/icons/active/64.png',
-  '128': '/icons/active/128.png'
-};
-
-const defaultIcons = {
-  '16': '/icons/16.png',
-  '32': '/icons/32.png',
-  '64': '/icons/64.png',
-  '128': '/icons/128.png'
-};
-
-async function updateIcon(tabId) {
-    try {
-        const tab = await chrome.tabs.get(tabId);
-        if (!tab.url || !tab.url.startsWith('http')) {
-            chrome.action.setIcon({ tabId, path: defaultIcons });
-            return;
-        }
-
-        const { monitor, hostnames } = await chrome.storage.local.get({ monitor: false, hostnames: [] });
-        const { hostname } = new URL(tab.url);
-
-        const isEnabled = monitor && hostnames.includes(hostname);
-        const iconPath = isEnabled ? activeIcons : defaultIcons;
-
-        chrome.action.setIcon({ tabId, path: iconPath }, () => {
-            if (chrome.runtime.lastError) {
-                // Ignore errors
-            }
-        });
-
-    } catch(e) {
-        // Tab was likely closed
-    }
-}
 
 // --- Simplified Event Listeners for Icon Updates ---
 
 chrome.tabs.onActivated.addListener(activeInfo => updateIcon(activeInfo.tabId));
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-  if (changeInfo.status === 'complete' || changeInfo.url) {
+  // Use 'loading' status to set the icon as early as possible
+  if (changeInfo.status === 'loading') {
      updateIcon(tabId);
   }
 });
@@ -245,6 +236,8 @@ chrome.storage.onChanged.addListener((changes, namespace) => {
 
 chrome.runtime.onInstalled.addListener(() => {
     chrome.tabs.query({}, (tabs) => {
-        tabs.forEach(tab => updateIcon(tab.id));
+        tabs.forEach(tab => {
+          if (tab.id) updateIcon(tab.id);
+        });
     });
 });
