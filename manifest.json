@@ -25,18 +25,12 @@
       "match_about_blank": true
     }
   ],
-  "permissions": ["storage", "activeTab", "scripting", "contextMenus", "notifications", "webRequest"],
+  "permissions": ["storage", "activeTab", "scripting", "contextMenus", "notifications"],
   "host_permissions": ["*://*/*"],
   "options_ui": {
     "page": "options/index.html",
     "open_in_tab": false
   },
-  "web_accessible_resources": [
-    {
-      "resources": ["*"],
-      "matches": ["*://*/*"]
-    }
-  ],
   "commands": {
     "_execute_action": {
       "description": "Toggle Enable Copy-Paste"
